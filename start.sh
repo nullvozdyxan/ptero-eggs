@@ -40,10 +40,39 @@ fi
 if [ "$PYTHON_ACTIVE" -eq 1 ]; then
     echo "⏳ Configuring Python environment..."
     
+    # Disable other Nginx configs (like nextcloud.conf) to avoid conflicts
+    for conf in /home/container/nginx/conf.d/*.conf; do
+        if [ -f "$conf" ] && [ "$(basename "$conf")" != "default.conf" ] && [ "$(basename "$conf")" != "default.conf.python" ]; then
+            mv "$conf" "${conf}.disabled"
+        fi
+    done
+    
+    # Detect or download Python
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_BIN="python3"
+    else
+        echo "⚠️ Python 3 not found in container system paths."
+        if [ ! -f "/home/container/python/bin/python3" ]; then
+            echo "⏳ Downloading portable Python (musl build) for Alpine..."
+            mkdir -p /home/container
+            PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20240107/cpython-3.10.13+20240107-x86_64-unknown-linux-musl-install_only.tar.gz"
+            if curl -sSL "$PYTHON_URL" -o /home/container/python-portable.tar.gz; then
+                echo "⏳ Extracting portable Python..."
+                tar -xzf /home/container/python-portable.tar.gz -C /home/container/
+                rm /home/container/python-portable.tar.gz
+                log_success "Portable Python installed successfully."
+            else
+                log_error "Failed to download portable Python."
+                exit 1
+            fi
+        fi
+        PYTHON_BIN="/home/container/python/bin/python3"
+    fi
+
     # Create virtual environment if it doesn't exist
     if [ ! -d "/home/container/.venv" ]; then
         echo "⏳ Creating virtual environment..."
-        python3 -m venv /home/container/.venv
+        $PYTHON_BIN -m venv /home/container/.venv
     fi
     
     # Activate virtual environment
@@ -66,7 +95,7 @@ if [ "$PYTHON_ACTIVE" -eq 1 ]; then
         fi
         
         # Use Python to safely and dynamically rewrite nginx config files
-        python3 -c '
+        $PYTHON_BIN -c '
 import os, sys
 port = os.environ.get("PYTHON_PORT", "8000")
 listen_port = sys.argv[1]
@@ -139,14 +168,19 @@ with open("/home/container/nginx/conf.d/default.conf", "w") as f:
         cat /home/container/logs/python.log
     fi
 else
+    # Enable other Nginx configs if they were disabled
+    for conf in /home/container/nginx/conf.d/*.conf.disabled; do
+        if [ -f "$conf" ]; then
+            mv "$conf" "${conf%.disabled}"
+        fi
+    done
+
     # Start PHP-FPM
     echo "⏳ Starting PHP-FPM..."
-    if /usr/sbin/php-fpm8 --fpm-config /home/container/php-fpm/php-fpm.conf --daemonize; then
-        log_success "PHP-FPM started successfully."
-    else
-        log_error "Failed to start PHP-FPM."
-        exit 1
-    fi
+    /usr/sbin/php-fpm8 --fpm-config /home/container/php-fpm/php-fpm.conf &
+    
+    # Give PHP-FPM a moment to spin up and log errors if any
+    sleep 2
 fi
 
 # NGINX if else WIP
