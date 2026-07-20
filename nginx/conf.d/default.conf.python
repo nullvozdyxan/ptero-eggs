@@ -1,0 +1,31 @@
+server {
+    listen 80;
+    server_name "";
+
+    #access_log /home/container/naccess.log;
+    #error_log  /home/container/nerror.log error;
+
+    root /home/container/webroot;
+    charset utf-8;
+
+    client_max_body_size 100m;
+    client_body_timeout 120s;
+    sendfile off;
+
+    # Serve static files directly if they exist
+    location /static/ {
+        alias /home/container/webroot/static/;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    # PROXY_MODE_PLACEHOLDER
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    location ~ /\.git {
+        deny all;
+    }
+}
