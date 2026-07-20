@@ -69,10 +69,21 @@ if [ "$PYTHON_ACTIVE" -eq 1 ]; then
         PYTHON_BIN="/home/container/python/bin/python3"
     fi
 
-    # Create virtual environment if it doesn't exist
-    if [ ! -d "/home/container/.venv" ]; then
-        echo "⏳ Creating virtual environment..."
-        $PYTHON_BIN -m venv /home/container/.venv
+    # Create virtual environment if it doesn't exist or is broken
+    if [ ! -d "/home/container/.venv" ] || [ ! -f "/home/container/.venv/bin/activate" ]; then
+        echo "⏳ Creating/recreating virtual environment..."
+        rm -rf /home/container/.venv
+        $PYTHON_BIN -m venv --without-pip /home/container/.venv
+        
+        echo "⏳ Bootstrapping pip inside virtual environment..."
+        if curl -sSL https://bootstrap.pypa.io/get-pip.py -o /home/container/get-pip.py; then
+            /home/container/.venv/bin/python3 /home/container/get-pip.py --quiet
+            rm /home/container/get-pip.py
+            log_success "pip successfully bootstrapped."
+        else
+            log_error "Failed to download get-pip.py."
+            exit 1
+        fi
     fi
     
     # Activate virtual environment
